@@ -5,6 +5,8 @@
 -- Prefer Pyright for Python
 vim.g.lazyvim_python_lsp = "pyright"
 
+vim.opt.scrolloff = 30
+
 -- Show diagnostics in a floating window instead of inline virtual text
 vim.diagnostic.config({
   virtual_text = false,

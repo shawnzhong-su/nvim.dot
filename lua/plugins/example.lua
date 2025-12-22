@@ -1,21 +1,117 @@
 -- React (TS/TSX) + Python IDE add‑ons for LazyVim
--- Relies on the built‑in extras.lang.typescript/python already imported in lua/config/lazy.lua
+-- 完整配置文件：集成了补全、自动导入、调试、测试及快捷键优化
+
 return {
-  -- Mason: install common LSP/format/lint/debug tools up front
+  -----------------------------------------------------------------------------
+  -- 1. 核心补全引擎 (替代 nvim-cmp 和 lspimport)
+  -----------------------------------------------------------------------------
+  {
+    "saghen/blink.cmp",
+    version = "*",
+    opts = {
+      -- 定义快捷键映射
+      keymap = {
+        preset = "none", -- 禁用默认预设，我们要自定义
+
+        ["<C-space>"] = { "show", "show_documentation", "hide_documentation" },
+        ["<C-e>"] = { "hide" },
+        -- 设置 Tab 键：如果有补全建议，则确认建议；否则执行默认 Tab 行为
+        ["<Tab>"] = { "accept", "fallback" },
+
+        -- 设置方向键或上下键在菜单中切换
+        ["<Up>"] = { "select_prev", "fallback" },
+        ["<Down>"] = { "select_next", "fallback" },
+        ["<C-p>"] = { "select_prev", "fallback" },
+        ["<C-n>"] = { "select_next", "fallback" },
+
+        -- 文档翻页
+        ["<C-b>"] = { "scroll_documentation_up", "fallback" },
+        ["<C-f>"] = { "scroll_documentation_down", "fallback" },
+      },
+
+      appearance = {
+        use_nvim_cmp_as_default = true,
+        nerd_font_variant = "mono",
+      },
+
+      completion = {
+        -- 核心：确认补全时自动导入
+        list = { selection = { preselect = true, auto_insert = true } },
+        menu = { border = "rounded" },
+        documentation = { window = { border = "rounded" }, auto_show = true },
+      },
+
+      sources = {
+        default = { "lsp", "path", "snippets", "buffer" },
+      },
+    },
+  },
+
+  -- 显式禁用旧的 lspimport，防止报错干扰
+  { "stevanmilic/nvim-lspimport", enabled = false },
+
+  -----------------------------------------------------------------------------
+  -- 2. LSP & 自动导入配置 (BasedPyright + TypeScript)
+  -----------------------------------------------------------------------------
+  {
+    "neovim/nvim-lspconfig",
+    opts = {
+      diagnostics = {
+        virtual_text = false, -- 保持界面整洁
+        underline = true,
+        update_in_insert = false,
+        severity_sort = true,
+        float = { border = "rounded", source = "always" },
+      },
+      servers = {
+        -- 禁用 Ruff 以防冲突
+        ruff = { enabled = false },
+        ruff_lsp = { enabled = false },
+        -- 禁用原版 Pyright
+        pyright = { enabled = false },
+
+        -- 启用 BasedPyright：提供比原版更强的 Code Action 和自动导入支持
+        -- 启用 BasedPyright
+        basedpyright = {
+          -- 关键修复：确保即使在单个文件或特殊路径下也能启动
+          root_dir = function(fname)
+            local util = require("lspconfig.util")
+            -- 寻找项目标志文件，如果找不到，就以当前文件所在目录作为根目录
+            return util.root_pattern(".git", "setup.py", "pyproject.toml", "requirements.txt")(fname)
+              or vim.fs.dirname(fname)
+          end,
+          settings = {
+            basedpyright = {
+              analysis = {
+                autoImportCompletions = true,
+                diagnosticMode = "workspace",
+                typeCheckingMode = "basic",
+              },
+            },
+          },
+        },
+        -- TailwindCSS
+        tailwindcss = {},
+      },
+    },
+  },
+
+  -----------------------------------------------------------------------------
+  -- 3. Mason 工具安装 (保留插件原名: mason-org/mason.nvim)
+  -----------------------------------------------------------------------------
   {
     "mason-org/mason.nvim",
-    name = "mason.nvim", -- upstream rename
     opts = function(_, opts)
       opts.ensure_installed = opts.ensure_installed or {}
       vim.list_extend(opts.ensure_installed, {
-        -- JS/TS/React
+        -- TS/JS/React
         "eslint_d",
         "prettierd",
         "biome",
         "js-debug-adapter",
         "tailwindcss-language-server",
-        -- Python
-        "pyright",
+        -- Python (使用 basedpyright 替换 pyright)
+        "basedpyright",
         "black",
         "isort",
         "debugpy",
@@ -23,118 +119,59 @@ return {
     end,
   },
 
-  -- Treesitter parsers for both stacks
-  {
-    "nvim-treesitter/nvim-treesitter",
-    opts = function(_, opts)
-      opts.ensure_installed = opts.ensure_installed or {}
-      vim.list_extend(opts.ensure_installed, {
-        "bash",
-        "html",
-        "javascript",
-        "json",
-        "lua",
-        "markdown",
-        "markdown_inline",
-        "python",
-        "query",
-        "regex",
-        "tsx",
-        "typescript",
-        "vim",
-        "yaml",
-      })
-    end,
-  },
-
-  -- Formatter preferences (Conform is LazyVim's default formatter)
+  -----------------------------------------------------------------------------
+  -- 4. 格式化 (Conform) 与 代码检查 (Lint)
+  -----------------------------------------------------------------------------
   {
     "stevearc/conform.nvim",
     optional = true,
-    opts = function(_, opts)
-      opts.formatters_by_ft = opts.formatters_by_ft or {}
-      opts.formatters_by_ft.javascript = { "prettierd", "biome" }
-      opts.formatters_by_ft.typescript = { "prettierd", "biome" }
-      opts.formatters_by_ft.javascriptreact = { "prettierd", "biome" }
-      opts.formatters_by_ft.typescriptreact = { "prettierd", "biome" }
-      opts.formatters_by_ft.python = { "black", "isort" }
-    end,
+    opts = {
+      formatters_by_ft = {
+        javascript = { "prettierd", "biome" },
+        typescript = { "prettierd", "biome" },
+        javascriptreact = { "prettierd", "biome" },
+        typescriptreact = { "prettierd", "biome" },
+        python = { "isort", "black" },
+      },
+    },
   },
-
-  -- Lint on save (eslint_d)
   {
     "mfussenegger/nvim-lint",
     optional = true,
-    opts = function(_, opts)
-      opts.linters_by_ft = opts.linters_by_ft or {}
-      opts.linters_by_ft.javascript = { "eslint_d" }
-      opts.linters_by_ft.typescript = { "eslint_d" }
-      opts.linters_by_ft.javascriptreact = { "eslint_d" }
-      opts.linters_by_ft.typescriptreact = { "eslint_d" }
-    end,
+    opts = {
+      linters_by_ft = {
+        javascript = { "eslint_d" },
+        typescript = { "eslint_d" },
+        javascriptreact = { "eslint_d" },
+        typescriptreact = { "eslint_d" },
+      },
+    },
   },
 
-  -- Virtualenv picker tuned for Miniconda
+  -----------------------------------------------------------------------------
+  -- 5. Python 虚拟环境切换 (Miniconda 优化)
+  -----------------------------------------------------------------------------
   {
     "linux-cultist/venv-selector.nvim",
+    branch = "regexp", -- 2025 推荐分支
     opts = function(_, opts)
       local home = vim.env.HOME
       local conda_root = vim.env.CONDA_PREFIX or (home and (home .. "/miniconda3") or nil)
-      opts.search = opts.search or {}
-      if conda_root then
-        -- Find env pythons under miniconda base
-        opts.search.conda_envs = {
-          command = string.format("fd /python$ %s/envs --full-path --color never -E /proc -a", conda_root),
-          type = "anaconda",
-        }
-        -- Also include base environment python
-        opts.search.conda_base = {
-          command = string.format("fd /python$ %s/bin --full-path --color never -E /proc -a", conda_root),
-          type = "anaconda",
-        }
-      end
-      opts.options = opts.options or {}
-      opts.options.notify_user_on_venv_activation = true
+      opts.settings = {
+        options = { notify_user_on_venv_activation = true },
+        search = {
+          conda = {
+            command = conda_root and (string.format("fd /python$ %s/envs --full-path --color never", conda_root))
+              or nil,
+          },
+        },
+      }
     end,
   },
 
-  -- Auto-import missing symbols via LSP (Pyright)
-  {
-    "stevanmilic/nvim-lspimport",
-    keys = {
-      {
-        "<leader>ai",
-        function()
-          require("lspimport").import()
-        end,
-        desc = "Auto import symbol",
-      },
-    },
-  },
-
-  -- Disable Ruff LSP variants (use Pyright only)
-  {
-    "neovim/nvim-lspconfig",
-    opts = {
-      diagnostics = {
-        virtual_text = false, -- 关闭行尾文字，让界面更干净
-        underline = true,
-        update_in_insert = false,
-        severity_sort = true,
-        float = {
-          border = "rounded",
-          source = "always",
-        },
-      },
-      -- 禁用 Ruff 以防与 Pyright 冲突 (按你原代码要求)
-      servers = {
-        ruff = { enabled = false },
-        ruff_lsp = { enabled = false },
-      },
-    },
-  },
-
-  -- Debugging: js/ts via vscode-js, python via debugpy
+  -----------------------------------------------------------------------------
+  -- 6. 调试 (DAP) & 测试 (Neotest)
+  -----------------------------------------------------------------------------
   {
     "mfussenegger/nvim-dap",
     optional = true,
@@ -145,80 +182,93 @@ return {
     },
     config = function()
       local dap = require("dap")
-
-      -- JS/TS debug adapter from mason (pwa-node)
+      -- JS/TS 调试
       require("dap-vscode-js").setup({
         debugger_path = vim.fn.stdpath("data") .. "/mason/packages/js-debug-adapter",
         adapters = { "pwa-node" },
       })
-
-      local js_languages = { "javascript", "javascriptreact", "typescript", "typescriptreact" }
-      for _, lang in ipairs(js_languages) do
-        dap.configurations[lang] = dap.configurations[lang] or {}
-        table.insert(dap.configurations[lang], {
-          type = "pwa-node",
-          request = "launch",
-          name = "Launch file",
-          program = "${file}",
-          cwd = "${workspaceFolder}",
-          sourceMaps = true,
-          protocol = "inspector",
-          console = "integratedTerminal",
-        })
-        table.insert(dap.configurations[lang], {
-          type = "pwa-node",
-          request = "attach",
-          name = "Attach (9229)",
-          processId = require("dap.utils").pick_process,
-          cwd = "${workspaceFolder}",
-          port = 9229,
-        })
+      for _, lang in ipairs({ "javascript", "typescript", "typescriptreact" }) do
+        dap.configurations[lang] = {
+          {
+            type = "pwa-node",
+            request = "launch",
+            name = "Launch file",
+            program = "${file}",
+            cwd = "${workspaceFolder}",
+          },
+        }
       end
-
-      -- Python debug adapter from mason
-      pcall(function()
-        require("dap-python").setup("debugpy-adapter")
-      end)
+      -- Python 调试
+      require("dap-python").setup("debugpy-adapter")
     end,
   },
-
-  -- Install dap adapters via mason-nvim-dap (but keep python adapter from nvim-dap-python)
-  {
-    "jay-babu/mason-nvim-dap.nvim",
-    optional = true,
-    opts = function(_, opts)
-      opts.ensure_installed = opts.ensure_installed or {}
-      vim.list_extend(opts.ensure_installed, { "js-debug-adapter", "debugpy" })
-      opts.handlers = opts.handlers or {}
-      opts.handlers.python = function() end
-    end,
-  },
-
-  -- Testing: Jest for React, pytest for Python
   {
     "nvim-neotest/neotest",
     optional = true,
-    dependencies = {
-      "nvim-neotest/neotest-jest",
-      "nvim-neotest/neotest-python",
-    },
+    dependencies = { "nvim-neotest/neotest-jest", "nvim-neotest/neotest-python" },
     opts = function(_, opts)
       opts.adapters = opts.adapters or {}
-      table.insert(
-        opts.adapters,
-        require("neotest-jest")({
-          jestCommand = "npm test --",
-          cwd = function(path)
-            return vim.fn.getcwd()
-          end,
+      table.insert(opts.adapters, require("neotest-jest")({ jestCommand = "npm test --" }))
+      table.insert(opts.adapters, require("neotest-python")({ runner = "pytest" }))
+    end,
+  },
+
+  -----------------------------------------------------------------------------
+  -- 7. 快捷键与交互优化 (Flash + Surround)
+  -----------------------------------------------------------------------------
+  {
+    "folke/flash.nvim",
+    opts = { modes = { char = { enabled = false } } },
+    keys = {
+      { "s", mode = { "n", "x", "o" }, false }, -- 释放 s 键给 surround
+      { "S", mode = { "n", "x", "o" }, false },
+      {
+        "<leader>j",
+        mode = { "n", "x", "o" },
+        function()
+          require("flash").jump()
+        end,
+        desc = "Flash",
+      },
+    },
+  },
+  {
+    -- 保留插件原名: nvim-mini/mini.surround
+    "nvim-mini/mini.surround",
+    opts = {
+      mappings = {
+        add = "sa",
+        delete = "sd",
+        find = "sf",
+        find_left = "sF",
+        highlight = "sh",
+        replace = "sr",
+        update_n_lines = "sn",
+      },
+    },
+  },
+
+  -----------------------------------------------------------------------------
+  -- 8. 语法高亮 (Treesitter)
+  -----------------------------------------------------------------------------
+  {
+    "nvim-treesitter/nvim-treesitter",
+    opts = function(_, opts)
+      if type(opts.ensure_installed) == "table" then
+        vim.list_extend(opts.ensure_installed, {
+          "bash",
+          "html",
+          "javascript",
+          "json",
+          "lua",
+          "markdown",
+          "python",
+          "tsx",
+          "typescript",
+          "yaml",
+          "regex",
         })
-      )
-      table.insert(
-        opts.adapters,
-        require("neotest-python")({
-          runner = "pytest",
-        })
-      )
+      end
     end,
   },
 }
