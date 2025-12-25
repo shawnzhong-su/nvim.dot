@@ -3,7 +3,16 @@
 -- Add any additional options here
 
 -- Prefer Pyright for Python
-vim.g.lazyvim_python_lsp = "pyright"
+-- lua/config/options.lua
+
+-- 将 Mason 的 bin 目录加入 PATH，确保 external commands 能找到工具
+do
+  local mason_bin = vim.fn.stdpath("data") .. "/mason/bin"
+  local sep = package.config:sub(1, 1) == "\\" and ";" or ":"
+  if not string.find(vim.env.PATH or "", mason_bin, 1, true) then
+    vim.env.PATH = mason_bin .. sep .. (vim.env.PATH or "")
+  end
+end
 
 vim.opt.scrolloff = 30
 

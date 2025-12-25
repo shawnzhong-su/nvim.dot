@@ -1,103 +1,120 @@
--- React (TS/TSX) + Python IDE add‑ons for LazyVim
--- 完整配置文件：集成了补全、自动导入、调试、测试及快捷键优化
-
 return {
   -----------------------------------------------------------------------------
-  -- 1. 核心补全引擎 (替代 nvim-cmp 和 lspimport)
+  -- 1. 核心补全引擎 (Blink.cmp - 替代 nvim-cmp)
   -----------------------------------------------------------------------------
   {
     "saghen/blink.cmp",
     version = "*",
     opts = {
-      -- 定义快捷键映射
       keymap = {
-        preset = "none", -- 禁用默认预设，我们要自定义
-
+        preset = "none",
         ["<C-space>"] = { "show", "show_documentation", "hide_documentation" },
         ["<C-e>"] = { "hide" },
-        -- 设置 Tab 键：如果有补全建议，则确认建议；否则执行默认 Tab 行为
-        ["<Tab>"] = { "accept", "fallback" },
-
-        -- 设置方向键或上下键在菜单中切换
+        ["<Tab>"] = { "accept", "fallback" }, -- 接受建议或 fallback
         ["<Up>"] = { "select_prev", "fallback" },
         ["<Down>"] = { "select_next", "fallback" },
         ["<C-p>"] = { "select_prev", "fallback" },
         ["<C-n>"] = { "select_next", "fallback" },
-
-        -- 文档翻页
         ["<C-b>"] = { "scroll_documentation_up", "fallback" },
         ["<C-f>"] = { "scroll_documentation_down", "fallback" },
       },
-
       appearance = {
         use_nvim_cmp_as_default = true,
         nerd_font_variant = "mono",
       },
-
       completion = {
-        -- 核心：确认补全时自动导入
         list = { selection = { preselect = true, auto_insert = true } },
         menu = { border = "rounded" },
         documentation = { window = { border = "rounded" }, auto_show = true },
       },
-
       sources = {
         default = { "lsp", "path", "snippets", "buffer" },
       },
     },
   },
 
-  -- 显式禁用旧的 lspimport，防止报错干扰
+  -- 禁用 lspimport 以防冲突
   { "stevanmilic/nvim-lspimport", enabled = false },
 
   -----------------------------------------------------------------------------
-  -- 2. LSP & 自动导入配置 (BasedPyright + TypeScript)
+  -- 2. LSP 配置 (集成 BasedPyright 修复)
   -----------------------------------------------------------------------------
   {
     "neovim/nvim-lspconfig",
     opts = {
       diagnostics = {
-        virtual_text = false, -- 保持界面整洁
+        virtual_text = false,
         underline = true,
         update_in_insert = false,
         severity_sort = true,
         float = { border = "rounded", source = "always" },
       },
       servers = {
-        -- 禁用 Ruff 以防冲突
+        -- 禁用可能冲突的 Server
         ruff = { enabled = false },
         ruff_lsp = { enabled = false },
-        -- 禁用原版 Pyright
         pyright = { enabled = false },
 
-        -- 启用 BasedPyright：提供比原版更强的 Code Action 和自动导入支持
-        -- 启用 BasedPyright
+        -- Python: BasedPyright (包含文档中的核心修复)
         basedpyright = {
-          -- 关键修复：确保即使在单个文件或特殊路径下也能启动
-          root_dir = function(fname)
+          enabled = true,
+          -- 修复 1: 强制指定命令路径，确保能找到 Mason 安装的 binary
+          cmd = (function()
+            local mason_bin = vim.fn.stdpath("data") .. "/mason/bin/basedpyright-langserver"
+            if vim.fn.executable(mason_bin) == 1 then
+              return { mason_bin, "--stdio" }
+            end
+            return { "basedpyright-langserver", "--stdio" }
+          end)(),
+
+          -- 修复 2: 适配 Neovim 0.11+ 的 root_dir 签名 (bufnr, on_dir)
+          root_dir = function(bufnr, on_dir)
+            -- 处理 bufnr 为文件名或数字的情况
+            local fname = bufnr
+            if type(bufnr) == "number" then
+              fname = vim.api.nvim_buf_get_name(bufnr)
+            end
+
+            -- 如果没有文件名，直接返回 nil
+            if type(fname) ~= "string" or fname == "" then
+              return nil
+            end
+
+            -- 获取目录
+            local dir = vim.fs.dirname(fname)
+
+            -- 寻找项目根目录标志
             local util = require("lspconfig.util")
-            -- 寻找项目标志文件，如果找不到，就以当前文件所在目录作为根目录
-            return util.root_pattern(".git", "setup.py", "pyproject.toml", "requirements.txt")(fname)
-              or vim.fs.dirname(fname)
+            local root = util.root_pattern(".git", "setup.py", "pyproject.toml", "requirements.txt")(fname) or dir
+
+            -- 如果传入了回调函数 (0.11+ 特性)，则调用它
+            if type(on_dir) == "function" then
+              on_dir(root)
+              return
+            end
+
+            return root
           end,
+
           settings = {
             basedpyright = {
               analysis = {
                 autoImportCompletions = true,
                 diagnosticMode = "workspace",
-                typeCheckingMode = "basic",
+                typeCheckingMode = "basic", -- 可根据需要改为 standard
               },
             },
           },
         },
-        -- TailwindCSS
+
+        -- Frontend: TailwindCSS
         tailwindcss = {},
       },
     },
   },
 
   -----------------------------------------------------------------------------
-  -- 3. Mason 工具安装 (保留插件原名: mason-org/mason.nvim)
+  -- 3. Mason 工具链
   -----------------------------------------------------------------------------
   {
     "mason-org/mason.nvim",
@@ -110,7 +127,7 @@ return {
         "biome",
         "js-debug-adapter",
         "tailwindcss-language-server",
-        -- Python (使用 basedpyright 替换 pyright)
+        -- Python
         "basedpyright",
         "black",
         "isort",
@@ -120,7 +137,7 @@ return {
   },
 
   -----------------------------------------------------------------------------
-  -- 4. 格式化 (Conform) 与 代码检查 (Lint)
+  -- 4. 格式化 (Conform) & 代码检查 (Lint)
   -----------------------------------------------------------------------------
   {
     "stevearc/conform.nvim",
@@ -149,11 +166,12 @@ return {
   },
 
   -----------------------------------------------------------------------------
-  -- 5. Python 虚拟环境切换 (Miniconda 优化)
+  -- 5. Python 虚拟环境 (Miniconda 增强)
   -----------------------------------------------------------------------------
   {
     "linux-cultist/venv-selector.nvim",
-    branch = "regexp", -- 2025 推荐分支
+    branch = "regexp",
+    dependencies = { "neovim/nvim-lspconfig", "nvim-telescope/telescope.nvim", "mfussenegger/nvim-dap-python" },
     opts = function(_, opts)
       local home = vim.env.HOME
       local conda_root = vim.env.CONDA_PREFIX or (home and (home .. "/miniconda3") or nil)
@@ -167,6 +185,9 @@ return {
         },
       }
     end,
+    keys = {
+      { "<leader>cv", "<cmd>VenvSelect<cr>", desc = "Select VirtualEnv" },
+    },
   },
 
   -----------------------------------------------------------------------------
@@ -182,10 +203,10 @@ return {
     },
     config = function()
       local dap = require("dap")
-      -- JS/TS 调试
+      -- JS/TS Debug
       require("dap-vscode-js").setup({
         debugger_path = vim.fn.stdpath("data") .. "/mason/packages/js-debug-adapter",
-        adapters = { "pwa-node" },
+        adapters = { "pwa-node", "pwa-chrome" },
       })
       for _, lang in ipairs({ "javascript", "typescript", "typescriptreact" }) do
         dap.configurations[lang] = {
@@ -198,8 +219,8 @@ return {
           },
         }
       end
-      -- Python 调试
-      require("dap-python").setup("debugpy-adapter")
+      -- Python Debug
+      require("dap-python").setup(vim.fn.stdpath("data") .. "/mason/packages/debugpy/venv/bin/python")
     end,
   },
   {
@@ -214,13 +235,13 @@ return {
   },
 
   -----------------------------------------------------------------------------
-  -- 7. 快捷键与交互优化 (Flash + Surround)
+  -- 7. 界面与交互优化
   -----------------------------------------------------------------------------
   {
     "folke/flash.nvim",
     opts = { modes = { char = { enabled = false } } },
     keys = {
-      { "s", mode = { "n", "x", "o" }, false }, -- 释放 s 键给 surround
+      { "s", mode = { "n", "x", "o" }, false },
       { "S", mode = { "n", "x", "o" }, false },
       {
         "<leader>j",
@@ -233,7 +254,6 @@ return {
     },
   },
   {
-    -- 保留插件原名: nvim-mini/mini.surround
     "nvim-mini/mini.surround",
     opts = {
       mappings = {
@@ -249,7 +269,7 @@ return {
   },
 
   -----------------------------------------------------------------------------
-  -- 8. 语法高亮 (Treesitter)
+  -- 8. Treesitter 语法高亮
   -----------------------------------------------------------------------------
   {
     "nvim-treesitter/nvim-treesitter",
@@ -267,6 +287,7 @@ return {
           "typescript",
           "yaml",
           "regex",
+          "css",
         })
       end
     end,
