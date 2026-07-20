@@ -1,49 +1,53 @@
-# Spec 治理工具
+# Spec Governance Tools
 
-本文说明 `cs-onboard` 复制到 `.codestable/reference/` 的项目 runtime helper。工具从当前
-`cs-onboard` skill 包运行：
+This file documents project-runtime helpers copied by `cs-onboard` into
+`.codestable/reference/`. The source tool is:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json <command>
+python3 .codestable/tools/codestable-spec-governance.py --root . --json <command>
 ```
 
-## 命令
+## Commands
 
 ### `route`
 
-在 design、roadmap、requirement 或 acceptance 前选择候选长期 spec：
+Select candidate long-lived specs before design, roadmap, requirement, or
+acceptance work:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json route \
+python3 .codestable/tools/codestable-spec-governance.py --root . --json route \
   --query "source scout query coverage before crawl"
 ```
 
-JSON 输出 `selected_specs`、`excluded_specs`、`clarification_required` 和
-`allowed_to_skip_requirement_delta`。
+The JSON reports `selected_specs`, `excluded_specs`,
+`clarification_required`, and `allowed_to_skip_requirement_delta`.
 
-没有选中 spec 时默认进入 owner clarification；只有查询命中显式 local-skip 模式（例如纯前端
-展示微调）才例外。该结果不能被当成跳过 requirement review 的授权。
+No selected spec is an owner clarification state unless the query matches an
+explicit local-skip pattern such as a frontend-only display tweak. It must not be
+treated as permission to skip requirement review.
 
 ### `clarify`
 
-把 owner clarification 追加到既有 spec，不重写全文：
+Append an owner clarification to an existing spec file without rewriting the
+whole document:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json clarify \
+python3 .codestable/tools/codestable-spec-governance.py --root . --json clarify \
   --file .codestable/requirements/source-discovery.md \
   --question "Which source field is canonical?" \
   --answer "Use retrieved_at plus intent bucket." \
   --anchor RQ-2
 ```
 
-相同 question/answer 可幂等重跑。
+The command is idempotent for the same question and answer.
 
 ### `create-delta`
 
-创建 feature-local requirement delta，不直接修改长期 requirement：
+Create a feature-local requirement delta instead of mutating a long-lived
+requirement directly:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json create-delta \
+python3 .codestable/tools/codestable-spec-governance.py --root . --json create-delta \
   --unit .codestable/features/YYYY-MM-DD-source-query-coverage \
   --requirement source-discovery \
   --added "The system records query intent coverage before crawl." \
@@ -51,56 +55,60 @@ python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --js
   --owner-decision approved
 ```
 
-文件路径为 `{unit}/{slug}-req-delta.md`。
+The file path is `{unit}/{slug}-req-delta.md`.
 
 ### `apply-delta`
 
-把已批准 delta 机械写入目标 requirement 的 change log：
+Mechanically record an approved delta in the target requirement change log:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json apply-delta \
+python3 .codestable/tools/codestable-spec-governance.py --root . --json apply-delta \
   --delta .codestable/features/YYYY-MM-DD-source-query-coverage/source-query-coverage-req-delta.md \
   --target .codestable/requirements/source-discovery.md
 ```
 
-未批准 delta 返回 `delta_not_approved`。
+Unapproved deltas fail with `delta_not_approved`.
 
 ### `inventory`
 
-把现有 spec 分类为 `current-trusted`、`current-unreviewed`、`drift-suspected`、
-`historical`、`superseded` 或 `orphaned`：
+Classify current spec documents as `current-trusted`,
+`current-unreviewed`, `drift-suspected`, `historical`, `superseded`, or
+`orphaned`:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json inventory
+python3 .codestable/tools/codestable-spec-governance.py --root . --json inventory
 ```
 
-旧 spec 即使为 `status: current`，只要没有显式 `owner_review_state`，仍归为
-`current-unreviewed`，不能视为 trusted。
+Old specs with `status: current` but no explicit `owner_review_state` are
+classified as `current-unreviewed`, not trusted.
 
-inventory 需要 review 或交给 owner 时，写人读 rehabilitation artifact：
+Write a human-readable rehabilitation artifact when the inventory needs to be
+reviewed or handed to the owner:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json inventory \
-  --output .codestable/audits/YYYY-MM-DD-spec-governance/inventory.md
+python3 .codestable/tools/codestable-spec-governance.py --root . --json inventory \
+  --output .codestable/spec-governance/YYYY-MM-DD-{slug}-inventory.md
 ```
 
-artifact 列出分类计数、每个 spec item，以及 `current-unreviewed` / `drift-suspected`
-的 owner follow-up。同一状态重跑不会重写文件。
+The artifact lists classification counts, every spec item, and owner follow-up
+entries for `current-unreviewed` or `drift-suspected` specs. Re-running with the
+same state is content-aware and does not rewrite the file.
 
 ### `analyze`
 
-运行只读 acceptance/design 一致性检查：
+Run a read-only acceptance/design consistency pass:
 
 ```bash
-python3 <cs-onboard skill dir>/tools/codestable-spec-governance.py --root . --json analyze \
+python3 .codestable/tools/codestable-spec-governance.py --root . --json analyze \
   --unit .codestable/features/YYYY-MM-DD-source-query-coverage
 ```
 
-缺 approved req delta 的 capability-boundary 变更、缺 delta 证据的 dirty requirement
-重写都会被阻塞；`drift-suspected` spec 交给 owner 裁决。
+It blocks capability-boundary changes without an approved req delta and dirty
+requirement rewrites without approved delta evidence. Drift-suspected specs are
+reported for owner adjudication.
 
-## 边界
+## Boundary
 
-该工具是确定性的，不决定产品意图、不合并 spec、不重写旧 requirement。需要人类决策时，
-先按 `approval-conventions.md` 写 approval report，再通过 clarification 或 approved delta
-落实；context packet 只能作为证据，不能代替审批表面。
+This tool is deterministic. It does not decide product intent, merge specs, or
+rewrite old requirements. Human owner decisions still happen through owner
+context, clarification, or approved deltas.
