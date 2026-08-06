@@ -44,6 +44,10 @@ vim.api.nvim_create_autocmd("User", {
       vscode.call("workbench.action.gotoSymbol")
     end)
 
+    vim.keymap.set("n", "<leader>ee", function()
+      vscode.call("yazi-vscode.toggle")
+    end, { desc = "Yazi File Explorer" })
+
     -- Toggle VS Code integrated terminal
     for _, lhs in ipairs({ "<leader>ft", "<leader>fT", "<c-/>" }) do
       vim.keymap.set("n", lhs, function()
